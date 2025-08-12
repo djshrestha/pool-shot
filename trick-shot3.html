@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pool Shot Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+        }
+        canvas {
+            background-color: #0d693e;
+            border: 10px solid #6b4226;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2), 0 6px 6px rgba(0,0,0,0.25);
+            cursor: crosshair;
+        }
+        .instructions-panel {
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(5px);
+        }
+        /* Toggle Switch Styles */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #4f46e5;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #4f46e5;
+        }
+        /* Disabled button style */
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-5xl mx-auto">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800 text-center mb-2">Pool Shot Calculator</h1>
+        <p class="text-gray-600 text-center mb-6">Visualize your winning shot. Now with animation!</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2">
+                <canvas id="poolTable"></canvas>
+            </div>
+
+            <div class="instructions-panel p-6 rounded-lg shadow-lg border border-gray-200 flex flex-col">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Shot Mode</h2>
+                <div class="flex items-center justify-center mb-6">
+                    <span class="mr-3 font-medium text-gray-900">Kick Shot</span>
+                    <div class="relative inline-block w-14 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="shotModeToggle" class="toggle-checkbox absolute block w-7 h-7 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                        <label for="shotModeToggle" class="toggle-label block overflow-hidden h-7 rounded-full bg-gray-300 cursor-pointer"></label>
+                    </div>
+                    <span class="ml-3 font-medium text-gray-900">Bank Shot</span>
+                </div>
+
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-t pt-4">Instructions</h2>
+                <div id="status" class="mb-4 p-3 bg-blue-100 text-blue-800 rounded-lg text-center font-semibold">
+                    Step 1: Place the Cue Ball
+                </div>
+                <div class="space-y-3 text-gray-700 mb-6">
+                    <p>1. Place cue ball, then object ball.</p>
+                    <p>2. Select a pocket to lock it in.</p>
+                    <p>3. Use the buttons below to see the path or animate the shot.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <button id="showPathBtn" class="bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-300" disabled>Show Path</button>
+                    <button id="playBtn" class="bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300" disabled>Play</button>
+                </div>
+                
+                <div class="mt-auto">
+                    <div class="pt-6 border-t border-gray-300">
+                         <h3 class="text-xl font-bold text-gray-800 mb-3">Legend</h3>
+                         <div class="space-y-2">
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full border-2 border-gray-500 bg-white mr-2"></div><span>Cue Ball</span></div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full bg-red-500 mr-2"></div><span>Object Ball</span></div>
+                            <div class="flex items-center"><div class="w-4 h-4 rounded-full border-2 border-dashed border-gray-500 mr-2"></div><span>Ghost Ball (Target)</span></div>
+                            <div class="flex items-center"><div class="w-5 h-0.5 bg-yellow-400 mr-2"></div><span>Cue Ball Path</span></div>
+                            <div class="flex items-center"><div class="w-5 h-0.5 bg-cyan-400 mr-2"></div><span>Object Ball Path</span></div>
+                         </div>
+                    </div>
+
+                    <button id="resetButton" class="mt-6 w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors duration-300">
+                        Reset Table
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('poolTable');
+        const ctx = canvas.getContext('2d');
+        const resetButton = document.getElementById('resetButton');
+        const statusDiv = document.getElementById('status');
+        const shotModeToggle = document.getElementById('shotModeToggle');
+        const showPathBtn = document.getElementById('showPathBtn');
+        const playBtn = document.getElementById('playBtn');
+
+        const tableAspectRatio = 2, ballRadiusRatio = 0.02, MAX_BOUNCES = 2;
+        let ballRadius;
+        let gameState = 'PLACE_CUE', shotMode = 'kick';
+        let cueBall = null, objectBall = null, selectedPocket = null, ghostBall = null;
+        let cuePath = null, objectBallPath = null, mousePos = null;
+        let pockets = [], cushions = [], playArea = {};
+        
+        let showPaths = false;
+        let animationFrameId = null;
+        let animatedCueBall = null, animatedObjectBall = null;
+        let animationState = { running: false, stage: 'none', progress: 0, startTime: 0 };
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const maxWidth = container.clientWidth;
+            canvas.width = maxWidth; canvas.height = maxWidth / tableAspectRatio;
+            ballRadius = canvas.width * ballRadiusRatio;
+            const pocketMargin = ballRadius * 1.5;
+            pockets = [
+                { x: pocketMargin, y: pocketMargin }, { x: canvas.width / 2, y: pocketMargin / 2 }, { x: canvas.width - pocketMargin, y: pocketMargin },
+                { x: pocketMargin, y: canvas.height - pocketMargin }, { x: canvas.width / 2, y: canvas.height - (pocketMargin / 2) }, { x: canvas.width - pocketMargin, y: canvas.height - pocketMargin }
+            ];
+            playArea = { top: ballRadius, bottom: canvas.height - ballRadius, left: ballRadius, right: canvas.width - ballRadius };
+            cushions = [
+                { y: playArea.top, reflect: 'y' }, { y: playArea.bottom, reflect: 'y' },
+                { x: playArea.left, reflect: 'x' }, { x: playArea.right, reflect: 'x' }
+            ];
+            draw();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            pockets.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, ballRadius * 1.2, 0, 2*Math.PI); ctx.fillStyle = 'black'; ctx.fill(); });
+
+            const currentCue = animationState.running ? animatedCueBall : cueBall;
+            const currentObject = animationState.running ? animatedObjectBall : objectBall;
+
+            if (showPaths && !animationState.running) {
+                if (objectBallPath) drawPath(objectBallPath, 'cyan', 4);
+                if (cuePath) drawPath(cuePath, 'yellow', 4);
+                if (ghostBall) drawBall(ghostBall, 'rgba(255, 255, 255, 0.5)', true);
+            }
+            
+            if (animationState.stage === 'stick_pullback' || animationState.stage === 'cue_strike') drawStick();
+
+            if (currentCue) drawBall(currentCue, 'white');
+            if (currentObject) drawBall(currentObject, '#ef4444');
+
+            if (mousePos && !animationState.running) {
+                if (gameState === 'PLACE_CUE') drawBall(mousePos, 'rgba(255, 255, 255, 0.6)');
+                else if (gameState === 'PLACE_OBJECT') drawBall(mousePos, 'rgba(239, 68, 68, 0.6)');
+            }
+            if (gameState === 'SELECT_POCKET' || gameState === 'READY') pockets.forEach(p => drawPocketMarker(p, selectedPocket === p));
+        }
+
+        function drawPath(path, color, width) {
+            ctx.beginPath(); ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+            ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+        }
+
+        function drawBall(pos, color, isDashed = false) {
+            ctx.beginPath(); ctx.arc(pos.x, pos.y, ballRadius, 0, 2*Math.PI);
+            ctx.fillStyle = color; ctx.fill();
+            ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2;
+            if (isDashed) ctx.setLineDash([5, 5]);
+            ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        function drawPocketMarker(pocket, isSelected) {
+            const markerSize = ballRadius * 0.7;
+            ctx.strokeStyle = isSelected ? '#facc15' : 'rgba(250, 204, 21, 0.5)';
+            ctx.lineWidth = isSelected ? 4 : 3;
+            ctx.beginPath();
+            ctx.moveTo(pocket.x - markerSize, pocket.y - markerSize); ctx.lineTo(pocket.x + markerSize, pocket.y + markerSize);
+            ctx.moveTo(pocket.x + markerSize, pocket.y - markerSize); ctx.lineTo(pocket.x - markerSize, pocket.y + markerSize);
+            ctx.stroke();
+        }
+
+        function drawStick() {
+            if (!cuePath) return;
+            const p1 = cueBall; const p2 = cuePath[1];
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            const stickLength = canvas.width * 0.4;
+            
+            let pullback = 0;
+            if (animationState.stage === 'stick_pullback') {
+                pullback = animationState.progress * ballRadius * 3;
+            } else if (animationState.stage === 'cue_strike') {
+                pullback = (1 - animationState.progress) * ballRadius * 3;
+            }
+
+            ctx.save();
+            ctx.translate(p1.x, p1.y);
+            ctx.rotate(angle);
+            ctx.fillStyle = '#854d0e';
+            ctx.fillRect(-stickLength - pullback, -ballRadius/4, stickLength - ballRadius, ballRadius/2);
+            ctx.fillStyle = '#1f2937';
+            ctx.fillRect(-ballRadius - pullback - ballRadius*0.2, -ballRadius/4, ballRadius*0.2, ballRadius/2);
+            ctx.restore();
+        }
+
+        function isPathObstructed(p1, p2, o) {
+            if (!o) return false;
+            const dx = p2.x - p1.x, dy = p2.y - p1.y, lenSq = dx*dx + dy*dy;
+            if (lenSq === 0) return false;
+            let t = ((o.x - p1.x) * dx + (o.y - p1.y) * dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const cX = p1.x + t * dx, cY = p1.y + t * dy;
+            return (o.x - cX)**2 + (o.y - cY)**2 < (2 * ballRadius * 0.99)**2;
+        }
+
+        function findKickPath(s, e, o) {
+            for (let i = 0; i <= MAX_BOUNCES; i++) { const p = findPathRecursive(s, e, o, i, [s]); if (p) return p; } return null;
+        }
+        function findPathRecursive(s, e, o, b, cP) {
+            if (b === 0) return !isPathObstructed(s, e, o) ? [...cP, e] : null;
+            for (const c of cushions) {
+                const lP = cP[cP.length - 2];
+                if(lP && ((c.reflect === 'y' && Math.abs(s.y - c.y) < 1) || (c.reflect === 'x' && Math.abs(s.x - c.x) < 1))) continue;
+                let rE; if (c.reflect === 'y') rE = { x: e.x, y: 2 * c.y - e.y }; else rE = { x: 2 * c.x - e.x, y: e.y };
+                const lDx = rE.x - s.x, lDy = rE.y - s.y; let iP, t;
+                if (c.reflect === 'y' && lDy !== 0) { t = (c.y - s.y) / lDy; iP = { x: s.x + t * lDx, y: c.y }; } 
+                else if (c.reflect === 'x' && lDx !== 0) { t = (c.x - s.x) / lDx; iP = { x: c.x, y: s.y + t * lDy }; } 
+                else continue;
+                if (t > 0 && t < 1 && iP.x >= playArea.left && iP.x <= playArea.right && iP.y >= playArea.top && iP.y <= playArea.bottom) {
+                    if (!isPathObstructed(s, iP, o)) { const nP = findPathRecursive(iP, e, o, b - 1, [...cP, iP]); if (nP) return nP; }
+                }
+            } return null;
+        }
+        function findBankPath(s, e, o) {
+            for (const c of cushions) {
+                let rE; if (c.reflect === 'y') rE = { x: e.x, y: 2 * c.y - e.y }; else rE = { x: 2 * c.x - e.x, y: e.y };
+                const lDx = rE.x - s.x, lDy = rE.y - s.y; let iP, t;
+                if (c.reflect === 'y' && lDy !== 0) { t = (c.y - s.y) / lDy; iP = { x: s.x + t * lDx, y: c.y }; } 
+                else if (c.reflect === 'x' && lDx !== 0) { t = (c.x - s.x) / lDx; iP = { x: c.x, y: s.y + t * lDy }; } 
+                else continue;
+                if (t > 0 && t < 1 && iP.x >= playArea.left && iP.x <= playArea.right && iP.y >= playArea.top && iP.y <= playArea.bottom) {
+                    if (!isPathObstructed(s, iP, o)) return [s, iP, e];
+                }
+            } return null;
+        }
+
+        function calculateShot() {
+            if (!objectBall || !selectedPocket) return;
+            cuePath = null; objectBallPath = null; ghostBall = null;
+            if (shotMode === 'kick') {
+                const dx = selectedPocket.x - objectBall.x, dy = selectedPocket.y - objectBall.y, dist = Math.sqrt(dx*dx + dy*dy);
+                const unitX = dx / dist, unitY = dy / dist;
+                ghostBall = { x: objectBall.x - unitX * (2 * ballRadius), y: objectBall.y - unitY * (2 * ballRadius) };
+                cuePath = findKickPath(cueBall, ghostBall, objectBall);
+                if (cuePath) objectBallPath = [objectBall, selectedPocket];
+            } else {
+                objectBallPath = findBankPath(objectBall, selectedPocket, cueBall);
+                if (objectBallPath) {
+                    const bankTargetPoint = objectBallPath[1];
+                    const dx = bankTargetPoint.x - objectBall.x, dy = bankTargetPoint.y - objectBall.y, dist = Math.sqrt(dx*dx + dy*dy);
+                    const unitX = dx / dist, unitY = dy / dist;
+                    ghostBall = { x: objectBall.x - unitX * (2 * ballRadius), y: objectBall.y - unitY * (2 * ballRadius) };
+                    if (!isPathObstructed(cueBall, ghostBall, null)) cuePath = [cueBall, ghostBall];
+                    else { cuePath = null; objectBallPath = null; }
+                }
+            }
+            updateUI();
+        }
+        
+        function updateUI() {
+            let modeText = shotMode.charAt(0).toUpperCase() + shotMode.slice(1);
+            switch (gameState) {
+                case 'PLACE_CUE': statusDiv.innerHTML = 'Step 1: Place the Cue Ball'; break;
+                case 'PLACE_OBJECT': statusDiv.innerHTML = 'Step 2: Place the Object Ball'; break;
+                case 'SELECT_POCKET': statusDiv.innerHTML = 'Step 3: Select a Pocket'; break;
+                case 'READY': statusDiv.innerHTML = 'Ready! Show path or play the shot.'; break;
+                case 'ANIMATING': statusDiv.innerHTML = 'Animating...'; break;
+                case 'DONE':
+                    if (cuePath && objectBallPath) statusDiv.innerHTML = `${modeText} Shot Complete!`;
+                    else statusDiv.innerHTML = `Impossible ${modeText} Shot!`;
+                    break;
+            }
+            playBtn.disabled = gameState !== 'READY';
+            showPathBtn.disabled = gameState !== 'READY';
+            shotModeToggle.disabled = gameState === 'ANIMATING';
+            if (gameState === 'READY') showPathBtn.textContent = showPaths ? 'Hide Path' : 'Show Path';
+        }
+
+        function reset() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameState = 'PLACE_CUE'; shotMode = shotModeToggle.checked ? 'bank' : 'kick';
+            cueBall = null; objectBall = null; selectedPocket = null; ghostBall = null;
+            cuePath = null; objectBallPath = null; mousePos = null; showPaths = false;
+            animationState = { running: false, stage: 'none', progress: 0 };
+            updateUI();
+            draw();
+        }
+
+        function playAnimation() {
+            if (!cuePath || !objectBallPath) return;
+            gameState = 'ANIMATING';
+            animationState = { running: true, stage: 'stick_pullback', progress: 0, startTime: performance.now() };
+            animatedCueBall = { ...cueBall };
+            animatedObjectBall = { ...objectBall };
+            showPaths = false;
+            updateUI();
+            
+            function animate(time) {
+                const elapsed = time - animationState.startTime;
+                
+                switch (animationState.stage) {
+                    case 'stick_pullback':
+                        animationState.progress = Math.min(elapsed / 500, 1);
+                        if (animationState.progress >= 1) transitionStage('cue_strike', time);
+                        break;
+                    case 'cue_strike':
+                        animationState.progress = Math.min(elapsed / 150, 1);
+                        if (animationState.progress >= 1) transitionStage('cue_travel', time);
+                        break;
+                    case 'cue_travel': {
+                        const cueTravelPath = [cueBall, ...cuePath.slice(1)];
+                        const duration = getPathLength(cueTravelPath) * 5;
+                        animationState.progress = Math.min(elapsed / duration, 1);
+                        animatedCueBall = getPointOnPath(cueTravelPath, animationState.progress);
+                        if (animationState.progress >= 1) {
+                            animatedCueBall = { ...ghostBall };
+                            transitionStage('object_travel', time);
+                        }
+                        break;
+                    }
+                    case 'object_travel': {
+                        const duration = getPathLength(objectBallPath) * 5;
+                        animationState.progress = Math.min(elapsed / duration, 1);
+                        animatedObjectBall = getPointOnPath(objectBallPath, animationState.progress);
+                        if (animationState.progress >= 1) {
+                            animatedObjectBall = objectBallPath[objectBallPath.length - 1];
+                            transitionStage('finished', time);
+                        }
+                        break;
+                    }
+                    case 'finished':
+                        animationState.running = false;
+                        gameState = 'DONE';
+                        updateUI();
+                        draw();
+                        return; // End animation
+                }
+                
+                draw();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function transitionStage(newStage, time) {
+            animationState.stage = newStage;
+            animationState.startTime = time;
+            animationState.progress = 0;
+        }
+        
+        function getPathLength(path) {
+            let length = 0;
+            if (!path) return 0;
+            for (let i = 0; i < path.length - 1; i++) {
+                length += Math.hypot(path[i+1].x - path[i].x, path[i+1].y - path[i].y);
+            }
+            return length;
+        }
+
+        function getPointOnPath(path, progress) {
+            if (progress <= 0) return path[0];
+            if (progress >= 1) return path[path.length - 1];
+            const totalLength = getPathLength(path);
+            let distanceToGo = progress * totalLength;
+            for (let i = 0; i < path.length - 1; i++) {
+                const segmentLength = Math.hypot(path[i+1].x - path[i].x, path[i+1].y - path[i].y);
+                if (distanceToGo <= segmentLength) {
+                    const segmentProgress = distanceToGo / segmentLength;
+                    return {
+                        x: path[i].x + (path[i+1].x - path[i].x) * segmentProgress,
+                        y: path[i].y + (path[i+1].y - path[i].y) * segmentProgress,
+                    };
+                }
+                distanceToGo -= segmentLength;
+            }
+            return path[path.length - 1];
+        }
+
+        // --- Event Listeners ---
+        shotModeToggle.addEventListener('change', reset);
+        showPathBtn.addEventListener('click', () => {
+            if (gameState !== 'READY') return;
+            showPaths = !showPaths;
+            updateUI();
+            draw();
+        });
+        playBtn.addEventListener('click', playAnimation);
+        resetButton.addEventListener('click', reset);
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (animationState.running) return;
+            const rect = canvas.getBoundingClientRect();
+            mousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            if (gameState === 'PLACE_CUE' || gameState === 'PLACE_OBJECT' || gameState === 'SELECT_POCKET') draw();
+        });
+
+        canvas.addEventListener('mouseleave', () => { if (!animationState.running) { mousePos = null; draw(); }});
+
+        canvas.addEventListener('click', (e) => {
+            if (gameState === 'READY' || gameState === 'DONE' || animationState.running || !mousePos) return;
+            switch (gameState) {
+                case 'PLACE_CUE':
+                    cueBall = { ...mousePos }; gameState = 'PLACE_OBJECT'; break;
+                case 'PLACE_OBJECT':
+                    if (cueBall && Math.hypot(mousePos.x - cueBall.x, mousePos.y - cueBall.y) > ballRadius * 2) {
+                        objectBall = { ...mousePos }; gameState = 'SELECT_POCKET';
+                    } break;
+                case 'SELECT_POCKET':
+                    let closestPocket = null, minDistance = Infinity;
+                    pockets.forEach(p => { const d = Math.hypot(mousePos.x - p.x, mousePos.y - p.y); if (d < minDistance) { minDistance = d; closestPocket = p; }});
+                    if (minDistance < ballRadius * 2) {
+                        selectedPocket = closestPocket;
+                        gameState = 'READY';
+                        calculateShot();
+                    } break;
+            }
+            updateUI();
+            draw();
+        });
+        
+        resizeCanvas();
+        updateUI();
+    </script>
+
+</body>
+</html>
